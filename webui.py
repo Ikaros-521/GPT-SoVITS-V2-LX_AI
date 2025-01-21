@@ -6,7 +6,7 @@ now_dir = os.getcwd()
 sys.path.insert(0, now_dir)
 import warnings
 warnings.filterwarnings("ignore")
-import json,yaml,torch,pdb,re,shutil
+import json,yaml,torch,pdb,re,shutil,time
 import platform
 import psutil
 import signal
@@ -591,10 +591,10 @@ def open1c(inp_text,exp_name,gpu_numbers,pretrained_s2G_path):
         path_semantic = "%s/6-name2semantic.tsv" % opt_dir
         for i_part in range(all_parts):
             semantic_path = "%s/6-name2semantic-%s.tsv" % (opt_dir, i_part)
-            with open(semantic_path, "r", encoding="utf8") as f:
+            with open(semantic_path, "r",encoding="utf8") as f:
                 opt += f.read().strip("\n").split("\n")
             os.remove(semantic_path)
-        with open(path_semantic, "w", encoding="utf8") as f:
+        with open(path_semantic, "w",encoding="utf8") as f:
             f.write("\n".join(opt) + "\n")
         ps1c=[]
         yield "语义token提取进程结束", {"__type__":"update","visible":True}, {"__type__":"update","visible":False}
@@ -763,6 +763,118 @@ else:
 
 def sync(text):
     return {'__type__':'update','value':text}
+
+# 添加一键训练函数
+def one_click_train(input_audio_path, model_name):
+    global ps_slice, p_denoise, p_asr, p_label, ps1abc, p_train_SoVITS, p_train_GPT
+    
+    try:
+        # 1. 清理临时数据
+        tmp = os.path.join(now_dir, "TEMP")
+        if os.path.exists(tmp):
+            for name in os.listdir(tmp):
+                if name == "jieba.cache":
+                    continue
+                path = "%s/%s" % (tmp, name)
+                delete = os.remove if os.path.isfile(path) else shutil.rmtree
+                try:
+                    delete(path)
+                except Exception as e:
+                    print(str(e))
+
+        # 清空output目录
+        output_dir = "output"
+        if os.path.exists(output_dir):
+            shutil.rmtree(output_dir)
+        os.makedirs(output_dir)
+
+        # 创建logs目录
+        logs_dir = os.path.join(exp_root, model_name)
+        os.makedirs(logs_dir, exist_ok=True)
+
+        # 2. 语音切割
+        slice_opt_root = "output/slicer_opt"
+        os.makedirs(slice_opt_root, exist_ok=True)
+        yield i18n("开始语音切割..."), True
+        for p in open_slice(input_audio_path, slice_opt_root, "-34", "4000", "300", "10", "500", 0.9, 0.25, 4):
+            pass
+        
+        # 等待切割完成
+        time.sleep(2)
+        if not os.path.exists(slice_opt_root) or not os.listdir(slice_opt_root):
+            raise Exception(i18n("语音切割失败，输出目录为空"))
+
+        # 3. 语音降噪
+        denoise_output_dir = "output/denoise_opt"
+        os.makedirs(denoise_output_dir, exist_ok=True)
+        yield i18n("开始语音降噪..."), True
+        for p in open_denoise(slice_opt_root, denoise_output_dir):
+            pass
+        
+        # 等待降噪完成
+        time.sleep(2)
+        if not os.path.exists(denoise_output_dir) or not os.listdir(denoise_output_dir):
+            raise Exception(i18n("语音降噪失败，输出目录为空"))
+
+        # 4. 离线批量ASR
+        asr_opt_dir = "output/asr_opt"
+        os.makedirs(asr_opt_dir, exist_ok=True)
+        yield i18n("开始语音识别..."), True
+        for p in open_asr(denoise_output_dir, asr_opt_dir, "达摩 ASR (中文)", "large", "zh", "float32"):
+            pass
+
+        # 等待ASR完成并检查结果
+        time.sleep(2)
+        output_file_path = os.path.join(asr_opt_dir, "denoise_opt.list")
+        if not os.path.exists(output_file_path):
+            raise Exception(i18n("语音识别失败，未生成denoise_opt.list文件"))
+
+        # 5. 数据集格式化
+        yield i18n("开始数据集格式化..."), True
+        for p in open1abc(output_file_path, denoise_output_dir, model_name, 
+                         "%s-%s"%(gpus,gpus), "%s-%s"%(gpus,gpus), "%s-%s"%(gpus,gpus),
+                         "GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large",
+                         "GPT_SoVITS/pretrained_models/chinese-hubert-base",
+                         pretrained_sovits_name[-int(version[-1])+2]):
+            pass
+
+        # 等待数据集格式化完成
+        time.sleep(5)  # 给更多时间等待文件生成
+        required_files = [
+            os.path.join(logs_dir, "2-name2text.txt"),
+            os.path.join(logs_dir, "6-name2semantic.tsv")
+        ]
+        for file in required_files:
+            if not os.path.exists(file):
+                raise Exception(i18n(f"数据集格式化失败，文件未生成: {file}"))
+
+        # 6. SoVITS训练
+        yield i18n("开始SoVITS训练..."), True
+        for p in open1Ba(default_batch_size, 8, model_name, 0.4, True, True, 4, gpus,
+                        pretrained_sovits_name[-int(version[-1])+2],
+                        pretrained_sovits_name[-int(version[-1])+2].replace("s2G","s2D")):
+            pass
+
+        # 7. GPT训练
+        yield i18n("开始GPT训练..."), True
+        for p in open1Bb(default_batch_size, 15, model_name, False, True, True, 5, gpus,
+                        pretrained_gpt_name[-int(version[-1])+2]):
+            pass
+
+        print("训练完成！！！！！")
+        yield i18n("训练完成！"), False
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        # 发生错误时清理所有进程
+        if (ps_slice != []): close_slice()
+        if p_denoise: close_denoise()
+        if p_asr: close_asr()
+        if ps1abc: close1abc()
+        if p_train_SoVITS: close1Ba()
+        if p_train_GPT: close1Bb()
+        yield i18n("训练过程出错: %s" % str(e)), False
+
 with gr.Blocks(title="GPT-SoVITS WebUI") as app:
     gr.Markdown(
         value=
@@ -774,6 +886,31 @@ with gr.Blocks(title="GPT-SoVITS WebUI") as app:
     )
 
     with gr.Tabs():
+        with gr.TabItem(i18n("★一键训练")):
+            gr.Markdown(value=i18n("请输入训练用的音频文件路径和期望的模型名称"))
+            with gr.Row():
+                with gr.Column():
+                    input_audio = gr.Textbox(
+                        label=i18n("训练用音频文件路径(支持文件或目录)"),
+                        value="",
+                        interactive=True
+                    )
+                    train_model_name = gr.Textbox(
+                        label=i18n("训练模型名称"),
+                        value="my_model",
+                        interactive=True
+                    )
+            with gr.Row():
+                with gr.Column():
+                    start_training = gr.Button(i18n("开始训练"), variant="primary")
+                    training_info = gr.Textbox(label=i18n("训练进度信息"))
+                    is_processing = gr.Checkbox(label=i18n("正在处理中"), value=False, visible=False)
+            
+            start_training.click(
+                one_click_train,
+                [input_audio, train_model_name],
+                [training_info, is_processing]
+            )
         with gr.TabItem(i18n("0-前置数据集获取工具")):#提前随机切片防止uvr5爆内存->uvr5->slicer->asr->打标
             gr.Markdown(value=i18n("0a-UVR5人声伴奏分离&去混响去延迟工具"))
             with gr.Row():
@@ -1044,7 +1181,7 @@ with gr.Blocks(title="GPT-SoVITS WebUI") as app:
                     open_tts.click(change_tts_inference, [bert_pretrained_dir,cnhubert_base_dir,gpu_number_1C,GPT_dropdown,SoVITS_dropdown, batched_infer_enabled], [tts_info,open_tts,close_tts])
                     close_tts.click(change_tts_inference, [bert_pretrained_dir,cnhubert_base_dir,gpu_number_1C,GPT_dropdown,SoVITS_dropdown, batched_infer_enabled], [tts_info,open_tts,close_tts])
             version_checkbox.change(switch_version,[version_checkbox],[pretrained_s2G,pretrained_s2D,pretrained_s1,GPT_dropdown,SoVITS_dropdown])
-        with gr.TabItem(i18n("2-GPT-SoVITS-变声")):gr.Markdown(value=i18n("施工中，请静候佳音"))
+        
     app.queue().launch(#concurrency_count=511, max_size=1022
         server_name="0.0.0.0",
         inbrowser=True,
