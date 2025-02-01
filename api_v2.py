@@ -400,21 +400,19 @@ async def tts_handle(req:dict):
     returns:
         StreamingResponse: audio stream response.
     """
-    
-    streaming_mode = req.get("streaming_mode", False)
-    return_fragment = req.get("return_fragment", False)
-    media_type = req.get("media_type", "wav")
-
-    check_res = check_params(req)
-    if check_res is not None:
-        return check_res
-
-    if streaming_mode or return_fragment:
-        req["return_fragment"] = True
-    
-    
-
     try:
+        streaming_mode = req.get("streaming_mode", False)
+        return_fragment = req.get("return_fragment", False)
+        media_type = req.get("media_type", "wav")
+
+        check_res = check_params(req)
+        if check_res is not None:
+            return check_res
+
+        if streaming_mode or return_fragment:
+            req["return_fragment"] = True
+        
+        
         tts_generator = tts_pipeline.run(req)
 
         if streaming_mode:
@@ -480,16 +478,16 @@ async def tts_handle_srt(req:dict,request):
     returns:
         StreamingResponse: audio stream response.
     """
-    
-    streaming_mode = req.get("streaming_mode", False)
-    media_type = req.get("media_type", "wav")
-
-    check_res = check_params(req)
-    if check_res is not None:
-        return check_res
-
-    
     try:
+        streaming_mode = req.get("streaming_mode", False)
+        media_type = req.get("media_type", "wav")
+
+        check_res = check_params(req)
+        if check_res is not None:
+            return check_res
+
+    
+    
         tts_generator=tts_pipeline.run(req)
         
         sr, audio_data = next(tts_generator)
