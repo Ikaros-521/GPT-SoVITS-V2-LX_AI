@@ -273,7 +273,7 @@ def check_illegal_chars(text: str) -> tuple[bool, str]:
     import re
     # 匹配所有常见语言文字、字母、数字、标点符号
     pattern = (
-        r'^['
+        r'['
         r'\u0000-\u007f'  # 基本拉丁字母（ASCII）
         r'\u0080-\u00ff'  # 拉丁文补充1
         r'\u0100-\u017f'  # 拉丁文扩展A
@@ -305,9 +305,9 @@ def check_illegal_chars(text: str) -> tuple[bool, str]:
         r'\U00020000-\U0002a6df'  # CJK统一表意文字扩展B
         r'\u2000-\u206f'  # 常用标点
         # r'\u2070-\u209f'  # 上标和下标
-        # r'\u20a0-\u20cf'  # 货币符号
-        # r'\u20d0-\u20ff'  # 组合记号
-        # r'\u2100-\u214f'  # 字母式符号
+        r'\u20a0-\u20cf'  # 货币符号
+        r'\u20d0-\u20ff'  # 组合记号
+        r'\u2100-\u214f'  # 字母式符号
         r'\u2150-\u218f'  # 数字形式
         # r'\u2190-\u21ff'  # 箭头
         r'\u2200-\u22ff'  # 数学运算符
@@ -315,17 +315,23 @@ def check_illegal_chars(text: str) -> tuple[bool, str]:
         # r'\u2400-\u243f'  # 控制图片
         # r'\u2440-\u245f'  # OCR
         # r'\u2460-\u24ff'  # 带圈或括号的字母数字
-        # r'\u2500-\u257f'  # 制表符
+        r'\u2500-\u257f'  # 制表符
         # r'\u2580-\u259f'  # 方块元素
         # r'\u25a0-\u25ff'  # 几何图形
         # r'\u2600-\u26ff'  # 杂项符号
         # r'\u2700-\u27bf'  # 装饰符号
-        # r'\u3000-\u303f'  # CJK符号和标点
-        r']+$'
+        r'\u3000-\u303f'  # CJK符号和标点
+        r'\s'  # 所有空白字符（包括空格、制表符、换行符等）
+        r']+'
     )
-    if re.match(pattern, text, re.UNICODE):
+    # 检查是否所有字符都匹配模式
+    if all(re.match(pattern, char) for char in text):
         return True, ""
-    return False, "text contains illegal characters (only letters, numbers, punctuation marks and common symbols are allowed)"
+    # 找出第一个不匹配的字符
+    for i, char in enumerate(text):
+        if not re.match(pattern, char):
+            return False, f"text contains illegal character '{char}' at position {i}: {text}"
+    return True, ""
 
 def check_params(req:dict):
     text:str = req.get("text", "")
