@@ -798,7 +798,85 @@ def speakers_endpoint():
 def speakerlist_endpoint():
     return JSONResponse(["female_calm","female","male"], status_code=200)
 
+@APP.get("/list_gpt_models")
+async def list_gpt_models():
+    try:
+        gpt_dir = "GPT_weights_v2"
+        
+        if not os.path.exists(gpt_dir):
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "models": [],
+                    "message": "GPT models directory not found"
+                }
+            )
 
+        # 获取所有.ckpt文件
+        model_files = []
+        for file in os.listdir(gpt_dir):
+            if file.endswith(".ckpt"):
+                # 使用相对路径
+                rel_path = os.path.join(gpt_dir, file)
+                # 统一使用正斜杠
+                rel_path = rel_path.replace("\\", "/")
+                model_files.append(rel_path)
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "models": model_files,
+                "message": "success"
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "models": [],
+                "message": f"Error listing GPT models: {str(e)}"
+            }
+        )
+
+@APP.get("/list_sovits_models")
+async def list_sovits_models():
+    try:
+        sovits_dir = "SoVITS_weights_v2"
+        
+        if not os.path.exists(sovits_dir):
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "models": [],
+                    "message": "SoVITS models directory not found"
+                }
+            )
+
+        # 获取所有.pth文件
+        model_files = []
+        for file in os.listdir(sovits_dir):
+            if file.endswith(".pth"):
+                # 使用相对路径
+                rel_path = os.path.join(sovits_dir, file)
+                # 统一使用正斜杠
+                rel_path = rel_path.replace("\\", "/")
+                model_files.append(rel_path)
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "models": model_files,
+                "message": "success"
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "models": [],
+                "message": f"Error listing SoVITS models: {str(e)}"
+            }
+        )
 
 @APP.post("/tts_to_audio/")
 async def tts_to_audio(request: TTS_Request):
