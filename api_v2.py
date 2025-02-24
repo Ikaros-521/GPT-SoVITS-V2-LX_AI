@@ -640,6 +640,64 @@ async def set_sovits_weights(weights_path: str = None):
         return JSONResponse(status_code=400, content={"message": f"change sovits weight failed", "Exception": str(e)})
     return JSONResponse(status_code=200, content={"message": "success"})
 
+@APP.post("/set_model")
+async def set_model(request: Request):
+    try:
+        json_post_raw = await request.json()
+        gpt_path = json_post_raw.get("gpt_model_path")
+        sovits_path = json_post_raw.get("sovits_model_path")
+
+        if not gpt_path or not sovits_path:
+            return JSONResponse(
+                status_code=400, 
+                content={
+                    "message": "Both gpt_model_path and sovits_model_path are required",
+                    "status": "error"
+                }
+            )
+
+        # 加载 GPT 模型
+        try:
+            tts_pipeline.init_t2s_weights(gpt_path)
+        except Exception as e:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to load GPT model: {str(e)}",
+                    "status": "error"
+                }
+            )
+
+        # 加载 SoVITS 模型
+        try:
+            tts_pipeline.init_vits_weights(sovits_path)
+        except Exception as e:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to load SoVITS model: {str(e)}",
+                    "status": "error"
+                }
+            )
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "message": "Successfully loaded both models",
+                "status": "success",
+                "gpt_model": gpt_path,
+                "sovits_model": sovits_path
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": f"Error processing request: {str(e)}",
+                "status": "error"
+            }
+        )
 
 @APP.get("/speakers")
 def speakers_endpoint():
