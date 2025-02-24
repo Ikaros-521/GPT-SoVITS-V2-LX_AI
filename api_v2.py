@@ -261,6 +261,78 @@ def handle_control(command:str):
         exit(0)
 
 
+def check_illegal_chars(text: str) -> tuple[bool, str]:
+    """检查文本中是否包含非法字符（只允许各种语言文字、字母、数字和标点符号）
+    
+    Args:
+        text: 要检查的文本
+        
+    Returns:
+        (is_valid, message): 是否合法及错误信息
+    """
+    import re
+    # 匹配所有常见语言文字、字母、数字、标点符号
+    pattern = (
+        r'['
+        r'\u0000-\u007f'  # 基本拉丁字母（ASCII）
+        r'\u0080-\u00ff'  # 拉丁文补充1
+        r'\u0100-\u017f'  # 拉丁文扩展A
+        r'\u0180-\u024f'  # 拉丁文扩展B
+        r'\u0250-\u02af'  # 国际音标扩展
+        r'\u0370-\u03ff'  # 希腊语和科普特语
+        r'\u0400-\u04ff'  # 西里尔字母
+        r'\u0500-\u052f'  # 西里尔字母补充
+        r'\u0530-\u058f'  # 亚美尼亚语
+        r'\u0590-\u05ff'  # 希伯来语
+        r'\u0600-\u06ff'  # 阿拉伯语
+        r'\u0750-\u077f'  # 阿拉伯语补充
+        r'\u0900-\u097f'  # 天城文
+        r'\u0980-\u09ff'  # 孟加拉语
+        r'\u0a00-\u0a7f'  # 果鲁穆奇语
+        r'\u0e00-\u0e7f'  # 泰语
+        r'\u1000-\u109f'  # 缅甸语
+        r'\u1100-\u11ff'  # 谚文字母
+        r'\u3040-\u309f'  # 平假名
+        r'\u30a0-\u30ff'  # 片假名
+        r'\u31f0-\u31ff'  # 片假名音标扩展
+        r'\u3200-\u32ff'  # 带圈字符
+        r'\u3300-\u33ff'  # CJK兼容
+        r'\u3400-\u4dbf'  # CJK统一表意文字扩展A
+        r'\u4e00-\u9fff'  # CJK统一表意文字
+        r'\uac00-\ud7af'  # 谚文音节
+        r'\uf900-\ufaff'  # CJK兼容表意文字
+        r'\uff00-\uffef'  # 全角ASCII、全角标点
+        r'\U00020000-\U0002a6df'  # CJK统一表意文字扩展B
+        r'\u2000-\u206f'  # 常用标点
+        # r'\u2070-\u209f'  # 上标和下标
+        r'\u20a0-\u20cf'  # 货币符号
+        r'\u20d0-\u20ff'  # 组合记号
+        r'\u2100-\u214f'  # 字母式符号
+        r'\u2150-\u218f'  # 数字形式
+        # r'\u2190-\u21ff'  # 箭头
+        r'\u2200-\u22ff'  # 数学运算符
+        # r'\u2300-\u23ff'  # 杂项工业符号
+        # r'\u2400-\u243f'  # 控制图片
+        # r'\u2440-\u245f'  # OCR
+        # r'\u2460-\u24ff'  # 带圈或括号的字母数字
+        r'\u2500-\u257f'  # 制表符
+        # r'\u2580-\u259f'  # 方块元素
+        # r'\u25a0-\u25ff'  # 几何图形
+        # r'\u2600-\u26ff'  # 杂项符号
+        # r'\u2700-\u27bf'  # 装饰符号
+        r'\u3000-\u303f'  # CJK符号和标点
+        r'\s'  # 所有空白字符（包括空格、制表符、换行符等）
+        r']+'
+    )
+    # 检查是否所有字符都匹配模式
+    if all(re.match(pattern, char) for char in text):
+        return True, ""
+    # 找出第一个不匹配的字符
+    for i, char in enumerate(text):
+        if not re.match(pattern, char):
+            return False, f"text contains illegal character '{char}' at position {i}: {text}"
+    return True, ""
+
 def check_params(req:dict):
     text:str = req.get("text", "")
     text_lang:str = req.get("text_lang", "")
@@ -269,11 +341,22 @@ def check_params(req:dict):
     media_type:str = req.get("media_type", "wav")
     prompt_lang:str = req.get("prompt_lang", "")
     text_split_method:str = req.get("text_split_method", "cut5")
+    prompt_text:str = req.get("prompt_text", "")
 
     if ref_audio_path in [None, ""]:
         return JSONResponse(status_code=400, content={"message": "ref_audio_path is required"})
     if text in [None, ""]:
         return JSONResponse(status_code=400, content={"message": "text is required"})
+        
+    # 检查文本中的非法字符
+    is_valid, error_msg = check_illegal_chars(text)
+    if not is_valid:
+        return JSONResponse(status_code=400, content={"message": error_msg})
+    if prompt_text:
+        is_valid, error_msg = check_illegal_chars(prompt_text)
+        if not is_valid:
+            return JSONResponse(status_code=400, content={"message": f"prompt_text {error_msg}"})
+            
     if (text_lang in [None, ""]) :
         return JSONResponse(status_code=400, content={"message": "text_lang is required"})
     elif text_lang.lower() not in tts_config.languages:
@@ -323,19 +406,19 @@ async def tts_handle(req:dict):
     returns:
         StreamingResponse: audio stream response.
     """
-    
-    streaming_mode = req.get("streaming_mode", False)
-    return_fragment = req.get("return_fragment", False)
-    media_type = req.get("media_type", "wav")
-
-    check_res = check_params(req)
-    if check_res is not None:
-        return check_res
-
-    if streaming_mode or return_fragment:
-        req["return_fragment"] = True
-    
     try:
+        streaming_mode = req.get("streaming_mode", False)
+        return_fragment = req.get("return_fragment", False)
+        media_type = req.get("media_type", "wav")
+
+        check_res = check_params(req)
+        if check_res is not None:
+            return check_res
+
+        if streaming_mode or return_fragment:
+            req["return_fragment"] = True
+        
+        
         tts_generator = tts_pipeline.run(req)
 
         if streaming_mode:
@@ -401,16 +484,16 @@ async def tts_handle_srt(req:dict,request):
     returns:
         StreamingResponse: audio stream response.
     """
-    
-    streaming_mode = req.get("streaming_mode", False)
-    media_type = req.get("media_type", "wav")
-
-    check_res = check_params(req)
-    if check_res is not None:
-        return check_res
-
-    
     try:
+        streaming_mode = req.get("streaming_mode", False)
+        media_type = req.get("media_type", "wav")
+
+        check_res = check_params(req)
+        if check_res is not None:
+            return check_res
+
+    
+    
         tts_generator=tts_pipeline.run(req)
         
         sr, audio_data = next(tts_generator)
