@@ -6,7 +6,7 @@ now_dir = os.getcwd()
 sys.path.insert(0, now_dir)
 import warnings
 warnings.filterwarnings("ignore")
-import json,yaml,torch,pdb,re,shutil,time
+import json,yaml,torch,pdb,re,shutil,time,zipfile
 import platform
 import psutil
 import signal
@@ -765,7 +765,7 @@ def sync(text):
     return {'__type__':'update','value':text}
 
 # 添加一键训练函数
-def one_click_train(input_audio_path, model_name):
+def one_click_train(input_files, input_dir, model_name):
     global ps_slice, p_denoise, p_asr, p_label, ps1abc, p_train_SoVITS, p_train_GPT
     
     try:
@@ -788,15 +788,47 @@ def one_click_train(input_audio_path, model_name):
             shutil.rmtree(output_dir)
         os.makedirs(output_dir)
 
+        # 如果model_name已经存在，则删除
+        if os.path.exists(os.path.join(exp_root, model_name)):
+            shutil.rmtree(os.path.join(exp_root, model_name))
+
         # 创建logs目录
         logs_dir = os.path.join(exp_root, model_name)
         os.makedirs(logs_dir, exist_ok=True)
+
+        # 确定音频来源
+        if input_dir and os.path.exists(input_dir):
+            # 使用方式2：直接使用输入的文件夹路径
+            audio_dir = input_dir
+        else:
+            # 使用方式1：处理上传的文件
+            if not input_files:
+                return i18n("请选择音频文件或输入正确的文件夹路径"), False
+                
+            # 创建临时目录存放上传的文件
+            audio_dir = os.path.join("raw", model_name)
+            os.makedirs(audio_dir, exist_ok=True)
+            
+            # 处理上传的文件
+            for file in input_files:
+                file_path = file.name
+                # 如果是zip文件，解压到临时目录
+                if file_path.endswith('.zip'):
+                    with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                        zip_ref.extractall(audio_dir)
+                # 如果是音频文件，直接复制
+                elif file_path.lower().endswith(('.wav', '.mp3', '.flac')):
+                    target_path = os.path.join(audio_dir, os.path.basename(file_path))
+                    shutil.copy2(file_path, target_path)
+            
+            if not os.path.exists(audio_dir) or not os.listdir(audio_dir):
+                return i18n("未找到有效的音频文件"), False
 
         # 2. 语音切割
         slice_opt_root = "output/slicer_opt"
         os.makedirs(slice_opt_root, exist_ok=True)
         yield i18n("开始语音切割..."), True
-        for p in open_slice(input_audio_path, slice_opt_root, "-34", "4000", "300", "10", "500", 0.9, 0.25, 4):
+        for p in open_slice(audio_dir, slice_opt_root, "-34", "4000", "300", "10", "500", 0.9, 0.25, 4):
             pass
         
         # 等待切割完成
@@ -861,12 +893,19 @@ def one_click_train(input_audio_path, model_name):
                         pretrained_gpt_name[-int(version[-1])+2]):
             pass
 
+        # 清理临时文件
+        if not input_dir and os.path.exists(audio_dir):
+            shutil.rmtree(audio_dir)
+
         print("训练完成！！！！！")
         yield i18n("训练完成！"), False
+
     except Exception as e:
         import traceback
         traceback.print_exc()
         # 发生错误时清理所有进程
+        if not input_dir and os.path.exists(audio_dir):
+            shutil.rmtree(audio_dir)
         if (ps_slice != []): close_slice()
         if p_denoise: close_denoise()
         if p_asr: close_asr()
@@ -887,12 +926,18 @@ with gr.Blocks(title="GPT-SoVITS WebUI") as app:
 
     with gr.Tabs():
         with gr.TabItem(i18n("★一键训练")):
-            gr.Markdown(value=i18n("请输入训练用的音频文件路径和期望的模型名称"))
+            gr.Markdown(value=i18n("请选择训练用的音频文件或输入音频文件夹路径，并输入期望的模型名称"))
             with gr.Row():
                 with gr.Column():
-                    input_audio = gr.Textbox(
-                        label=i18n("训练用音频文件路径(支持文件或目录)"),
-                        value="",
+                    input_audio = gr.File(
+                        label=i18n("方式1：上传音频文件(支持多个音频文件或zip压缩包)"),
+                        file_types=['audio', 'zip'],
+                        file_count="multiple",
+                        interactive=True
+                    )
+                    input_audio_dir = gr.Textbox(
+                        label=i18n("方式2：输入音频文件夹路径"),
+                        placeholder=i18n("例如：D:\\audio\\my_voice"),
                         interactive=True
                     )
                     train_model_name = gr.Textbox(
@@ -905,12 +950,14 @@ with gr.Blocks(title="GPT-SoVITS WebUI") as app:
                     start_training = gr.Button(i18n("开始训练"), variant="primary")
                     training_info = gr.Textbox(label=i18n("训练进度信息"))
                     is_processing = gr.Checkbox(label=i18n("正在处理中"), value=False, visible=False)
-            
+                    gr.Markdown(value=i18n('提示：要测试合成效果，请点击上方的"1-GPT-SoVITS-TTS"标签页，然后点击"1C-推理"子标签页进行测试。'))
+                    
             start_training.click(
                 one_click_train,
-                [input_audio, train_model_name],
+                [input_audio, input_audio_dir, train_model_name],
                 [training_info, is_processing]
             )
+
         with gr.TabItem(i18n("0-前置数据集获取工具")):#提前随机切片防止uvr5爆内存->uvr5->slicer->asr->打标
             gr.Markdown(value=i18n("0a-UVR5人声伴奏分离&去混响去延迟工具"))
             with gr.Row():
