@@ -135,7 +135,7 @@ cut_method_names = get_cut_method_names()
 parser = argparse.ArgumentParser(description="GPT-SoVITS api")
 parser.add_argument("-c", "--tts_config", type=str, default="GPT_SoVITS/configs/tts_infer.yaml", help="tts_infer路径")
 parser.add_argument("-a", "--bind_addr", type=str, default="127.0.0.1", help="default: 127.0.0.1")
-parser.add_argument("-p", "--port", type=int, default="9880", help="default: 9880")
+parser.add_argument("-p", "--port", type=int, default=9880, help="default: 9880")
 args = parser.parse_args()
 config_path = args.tts_config
 # device = args.device
@@ -902,7 +902,7 @@ if __name__ == "__main__":
     try:
         signal.signal(signal.SIGTERM, graceful_exit)
         signal.signal(signal.SIGINT, graceful_exit)  
-        uvicorn.run(app="api_v2:APP", host="0.0.0.0", port=9880, workers=1)
+        uvicorn.run(app="api_v2:APP", host="0.0.0.0", port=port, workers=1)
     except Exception as e:
         traceback.print_exc()
         os.kill(os.getpid(), signal.SIGTERM)

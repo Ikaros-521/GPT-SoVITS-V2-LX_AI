@@ -404,6 +404,7 @@ def close1Bb():
 ps_slice=[]
 def open_slice(inp,opt_root,threshold,min_length,min_interval,hop_size,max_sil_kept,_max,alpha,n_parts):
     global ps_slice
+    print("调用open_slice")
     inp = my_utils.clean_path(inp)
     opt_root = my_utils.clean_path(opt_root)
     check_for_existance([inp])
@@ -428,6 +429,7 @@ def open_slice(inp,opt_root,threshold,min_length,min_interval,hop_size,max_sil_k
         yield "切割结束", {"__type__":"update","visible":True}, {"__type__":"update","visible":False}, {"__type__": "update", "value":opt_root}, {"__type__": "update", "value":opt_root}, {"__type__": "update", "value":opt_root}
     else:
         yield "已有正在进行的切割任务，需先终止才能开启下一次任务", {"__type__": "update", "visible": False}, {"__type__": "update", "visible": True}, {"__type__": "update"}, {"__type__": "update"}, {"__type__": "update"}
+    print("open_slice结束")
 
 def close_slice():
     global ps_slice
